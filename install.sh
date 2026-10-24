@@ -2,6 +2,9 @@
 set -e
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "$(uname -s)" == Linux ]]; then
+    exec bash "$DIR/linux/install.sh" "$@"
+fi
 TARGET_BIN="$HOME/.local/bin"
 
 mkdir -p "$TARGET_BIN"

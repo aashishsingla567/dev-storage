@@ -1,0 +1,9 @@
+[Unit]
+Description=Opted-in build budget within T3 native agent budget
+
+[Slice]
+CPUQuota=200%
+MemoryHigh=5G
+MemoryMax=6G
+MemorySwapMax=2G
+TasksMax=512

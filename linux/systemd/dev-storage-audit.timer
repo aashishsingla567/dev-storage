@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily opportunity for a deep devbox audit
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+RandomizedDelaySec=45min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

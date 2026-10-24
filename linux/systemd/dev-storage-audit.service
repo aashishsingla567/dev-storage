@@ -1,0 +1,14 @@
+[Unit]
+Description=Deep devbox audit when load and pressure permit
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/dev-storage audit --scheduled
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=25%
+MemoryHigh=512M
+MemoryMax=1G
+TimeoutStartSec=4h
+UMask=0077
+NoNewPrivileges=true
