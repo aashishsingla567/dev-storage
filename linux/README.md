@@ -187,6 +187,21 @@ two devbox slice files only after all opted-in scopes finish. No existing
 application services, sleep settings, filesystem reservations, or network
 settings are changed by this installer.
 
+Investigate a persistent `df`/`du` gap for files hidden beneath mounts. A mounted home can conceal an old
+home directory that still occupies the root filesystem. Use the read-only
+private-namespace helper to inspect it without unmounting the running home:
+
+```bash
+sudo python3 linux/audit-underlay /home/USERNAME /root/hidden-home.json
+```
+
+The optional administrator installer also installs this as
+`/usr/local/sbin/dev-storage-underlay`. It binds a root view read-only inside a
+private mount namespace, audits the underlying directory, then unmounts only
+that temporary view. Hidden files may be unique historical data; archive and
+compare them before any deletion. This helper never deletes files and is not
+run automatically. Its output uses `under-mount:` labels, not live paths.
+
 On a large ext4 root partition, review the root-only reserved block pool
 separately from used data: the traditional 5% can reserve over 20 GiB on a
 500 GB drive. Reducing it to 1% can be reasonable when this still leaves

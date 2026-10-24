@@ -15,4 +15,4 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m unittest discover -s tests -v
       - run: bash -n install.sh linux/install.sh linux/install-system.sh linux/configure-t3-limits.sh
-      - run: python -m py_compile dev-storage dev_storage_linux.py linux/devbox-run
+      - run: python -m py_compile dev-storage dev_storage_linux.py linux/devbox-run linux/audit-underlay

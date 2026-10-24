@@ -27,6 +27,7 @@ vm.dirty_bytes=536870912
 EOF
 sysctl -p /etc/sysctl.d/99-zz-dev-storage.conf
 install -m 0644 "$ROOT/dev_storage_linux.py" /usr/local/lib/dev-storage/dev_storage_linux.py
+install -m 0755 "$ROOT/linux/audit-underlay" /usr/local/sbin/dev-storage-underlay
 cat > /etc/systemd/system/dev-storage-system-audit.service <<'EOF'
 [Unit]
 Description=Read-only system storage audit excluding encrypted-home backing files

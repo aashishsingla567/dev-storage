@@ -1,0 +1,60 @@
+#!/usr/bin/python3
+"""Read-only audit below a mount, using a private mount namespace."""
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+p = argparse.ArgumentParser(description=__doc__)
+p.add_argument("mountpoint", help="Mounted directory below /, e.g. /home/user")
+p.add_argument("output", help="Private JSON output path")
+p.add_argument("--inside-private-namespace", action="store_true", help=argparse.SUPPRESS)
+a = p.parse_args()
+if os.geteuid() != 0:
+    p.error("requires root; run with sudo")
+target = Path(os.path.abspath(a.mountpoint))
+if not target.is_dir() or target == Path("/") or not target.is_mount():
+    p.error("choose an existing mountpoint below /")
+if not a.inside_private_namespace:
+    os.execvp("unshare", ["unshare", "--mount", "--propagation", "private",
+                         sys.executable, str(Path(__file__).resolve()),
+                         "--inside-private-namespace", str(target), a.output])
+if os.readlink("/proc/self/ns/mnt") == os.readlink("/proc/1/ns/mnt"):
+    p.error("refusing to mount in the system mount namespace")
+os.umask(0o077)
+output = Path(a.output).absolute()
+output.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+view = Path(tempfile.mkdtemp(prefix="dev-storage-underlay-", dir="/run"))
+mounted = False
+try:
+    subprocess.run(["mount", "--bind", "/", str(view)], check=True)
+    mounted = True
+    subprocess.run(["mount", "-o", "remount,bind,ro", str(view)], check=True)
+    proc = subprocess.run(["du", "-x", "-B1", "--max-depth=3", "--null",
+                           str(view / target.relative_to("/"))],
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    rows = []
+    for record in proc.stdout.split(b"\0"):
+        if record:
+            size, name = record.split(b"\t", 1)
+            rows.append({"path": "under-mount:" + os.fsdecode(name).removeprefix(str(view)),
+                         "allocated": int(size)})
+    result = {"mountpoint": str(target), "read_only_private_namespace": True,
+              "rows": sorted(rows, key=lambda r: -r["allocated"]),
+              "errors": proc.stderr.decode(errors="replace"), "returncode": proc.returncode,
+              "notes": ["These files are hidden beneath the active mount.",
+                        "Directory rows overlap. Nothing was deleted."]}
+    temporary = output.with_name(output.name + f".{os.getpid()}.tmp")
+    with temporary.open("x") as stream:
+        json.dump(result, stream, indent=2)
+        stream.write("\n")
+    os.replace(temporary, output)
+    print(f"Under-mount audit saved: {output}")
+finally:
+    if mounted:
+        subprocess.run(["umount", str(view)], check=True)
+    view.rmdir()
+sys.exit(proc.returncode)
