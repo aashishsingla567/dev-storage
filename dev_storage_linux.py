@@ -371,6 +371,20 @@ def check(cfg):
         if volume["inodes"] and volume["inodes_used"] / volume["inodes"] > .8:
             warnings.append(f'{volume["path"]}: inode usage exceeds 80%')
     warnings.extend(busy_reasons())
+    snapshot_dir = Path("/timeshift/snapshots")
+    snapshot_health = {}
+    if snapshot_dir.is_dir():
+        try:
+            dates = []
+            for info in snapshot_dir.glob("*/info.json"):
+                data = json.loads(info.read_text())
+                dates.append(float(data["created"]))
+            snapshot_health = {"count": len(dates), "newest_created": max(dates) if dates else None}
+            if not dates or time.time() - max(dates) > 14 * 86400:
+                warnings.append("Timeshift recovery snapshot missing or older than 14 days")
+        except (OSError, ValueError, KeyError) as error:
+            snapshot_health = {"error": str(error)}
+            warnings.append("Timeshift snapshot freshness could not be checked")
     audit_path = STATE / "latest-audit.json"
     allocations = {}
     if audit_path.exists():
@@ -387,7 +401,7 @@ def check(cfg):
         warnings.append("no deep audit available")
     return {"timestamp": stamp(), "filesystems": volumes, "resources": r,
             "warnings": warnings, "cleanup_enabled": cfg["cleanup_enabled"],
-            "cached_allocations": allocations}
+            "cached_allocations": allocations, "timeshift": snapshot_health}
 
 
 def entrypoint():

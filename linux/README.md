@@ -118,7 +118,10 @@ journalctl --user -u dev-storage-check -u dev-storage-maintain -u dev-storage-au
 cat ~/.local/state/dev-storage/latest-check.json
 ```
 
-Checks return 1 for warnings, 2 for execution errors. The systemd check treats
+Checks return 1 for warnings, 2 for execution errors. The check treats
+snapshot age over fourteen days as a warning when Timeshift snapshots are
+present. This detects stale recovery points without creating or pruning them.
+The systemd check treats
 1 as a completed check; warnings remain in its output and private JSON. There
 is no external alert delivery. A user manager must run for timers to run;
 `loginctl show-user "$USER" -p Linger` shows whether they survive logout.
