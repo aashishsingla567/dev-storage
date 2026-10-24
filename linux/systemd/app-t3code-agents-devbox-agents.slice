@@ -1,0 +1,9 @@
+[Unit]
+Description=Opted-in terminal agents within T3 native agent budget
+
+[Slice]
+CPUQuota=200%
+MemoryHigh=4G
+MemoryMax=5G
+MemorySwapMax=1G
+TasksMax=512

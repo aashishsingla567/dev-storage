@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""Opt-in cgroup limits for new builds and terminal agents."""
+import argparse
+import os
+import shutil
+
+p = argparse.ArgumentParser(description=__doc__)
+p.add_argument("kind", choices=("build", "agent"))
+p.add_argument("command", nargs=argparse.REMAINDER)
+a = p.parse_args()
+command = a.command[1:] if a.command[:1] == ["--"] else a.command
+if not command:
+    p.error("a command is required")
+binary = shutil.which(command[0])
+if not binary:
+    p.error(f"command not found: {command[0]}")
+command[0] = binary
+limit = ("3G", "4G") if a.kind == "build" else ("1500M", "2500M")
+from pathlib import Path
+cgroup = Path("/proc/self/cgroup").read_text().strip().splitlines()[0].split(":", 2)[-1]
+inside_t3 = "app-t3code-agents" in cgroup
+prefix = "app-t3code-agents-devbox" if inside_t3 else "devbox"
+bindings = []
+if inside_t3 and cgroup.rsplit("/", 1)[-1].endswith(".scope"):
+    parent = cgroup.rsplit("/", 1)[-1]
+    bindings = ["-p", f"BindsTo={parent}", "-p", f"After={parent}"]
+os.execvp("systemd-run", ["systemd-run", "--user", "--scope", "--quiet",
+    f"--slice={prefix}-{a.kind}s.slice", "-p", f"MemoryHigh={limit[0]}",
+    "-p", f"MemoryMax={limit[1]}", "-p", "MemorySwapMax=1G",
+    "-p", "CPUQuota=200%", "-p", "TasksMax=256", *bindings, "--", *command])

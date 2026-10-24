@@ -1,0 +1,13 @@
+[Unit]
+Description=Conservative devbox maintenance when idle
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/dev-storage maintain
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=25%
+MemoryMax=512M
+TimeoutStartSec=1h
+UMask=0077
+NoNewPrivileges=true

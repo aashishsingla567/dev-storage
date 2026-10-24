@@ -2,6 +2,11 @@
 
 A lightweight, zero-dependency developer storage and lifecycle management CLI for macOS.
 
+**Linux devboxes:** a separate implementation provides allocated-byte audits,
+advisory budgets, pressure-aware systemd timers, conservative cache retention,
+and opt-in build/agent resource limits. See [Linux setup](linux/README.md).
+On Linux, `./install.sh` installs that implementation with cleanup disabled.
+
 It helps developers monitor, audit, and maintain fixed storage budgets for **iOS Simulator runtimes & devices**, **Android SDK system images & AVD emulators**, **Node.js/mise runtimes**, **package manager stores (npm/pnpm)**, and **local AI agent databases (OpenCode)**.
 
 ---

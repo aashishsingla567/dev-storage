@@ -1,0 +1,9 @@
+[Unit]
+Description=Aggregate budget for opted-in development builds
+
+[Slice]
+CPUQuota=200%
+MemoryHigh=5G
+MemoryMax=6G
+MemorySwapMax=2G
+TasksMax=512

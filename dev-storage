@@ -219,4 +219,7 @@ def main():
         cmd_clean_all()
 
 if __name__ == "__main__":
+    if sys.platform.startswith("linux"):
+        from dev_storage_linux import entrypoint as linux_main
+        sys.exit(linux_main())
     main()

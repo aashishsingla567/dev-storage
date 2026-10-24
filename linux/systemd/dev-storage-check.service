@@ -1,0 +1,11 @@
+[Unit]
+Description=Devbox capacity and pressure check
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/dev-storage check
+SuccessExitStatus=1
+Nice=19
+IOSchedulingClass=idle
+UMask=0077
+NoNewPrivileges=true
