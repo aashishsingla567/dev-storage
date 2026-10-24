@@ -54,6 +54,16 @@ class AccountingTests(unittest.TestCase):
             self.assertEqual(result["counts"].get("files", 0), 0)
             self.assertEqual(result["skipped"][0]["reason"], "explicit exclusion")
 
+    def test_backing_root_must_match_inode_and_use_another_filesystem(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            other = root / "other"
+            other.mkdir()
+            with self.assertRaisesRegex(ValueError, "match"):
+                m.scan([root], backing_root=other)
+            with self.assertRaisesRegex(ValueError, "distinct"):
+                m.scan([root], backing_root=root)
+
     def test_specific_prefixes_win(self):
         home = Path("/home/example")
         self.assertEqual(m.category(home / ".cache/pip/a", home), "package-caches")

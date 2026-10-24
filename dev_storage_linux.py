@@ -117,7 +117,7 @@ def category(path, home=HOME):
     return "other-home-files"
 
 
-def scan(roots, excludes=(), home=HOME, progress=False):
+def scan(roots, excludes=(), home=HOME, progress=False, backing_root=None):
     """One pass, st_blocks accounting, same-device, no links, unique hardlinks.
 
     Categories are exclusive. Directory detail is hierarchical and must not be
@@ -129,15 +129,22 @@ def scan(roots, excludes=(), home=HOME, progress=False):
     counts = Counter()
     excludes = {os.path.abspath(p) for p in excludes}
     last_progress = time.monotonic()
+    if backing_root is not None:
+        backing_root = Path(backing_root).absolute()
+        if len(roots) != 1 or Path(roots[0]).stat().st_ino != backing_root.stat().st_ino:
+            raise ValueError("encrypted backing root must match the single plaintext root inode")
+        if Path(roots[0]).stat().st_dev == backing_root.stat().st_dev:
+            raise ValueError("encrypted backing and plaintext roots must be distinct filesystems")
+    plaintext_device = Path(roots[0]).stat().st_dev if backing_root is not None else None
 
-    def visit(path, device, depth=0):
+    def visit(path, device, depth=0, backing=None):
         nonlocal last_progress
         allocated = apparent = 0
         if str(path) in excludes:
             skipped.append({"path": str(path), "reason": "explicit exclusion"})
             return allocated, apparent
         try:
-            s = path.lstat()
+            s = (backing if backing is not None else path).lstat()
             if s.st_dev != device:
                 skipped.append({"path": str(path), "reason": "different filesystem"})
                 return 0, 0
@@ -148,7 +155,7 @@ def scan(roots, excludes=(), home=HOME, progress=False):
                     return 0, 0
                 seen.add(key)
             allocated = s.st_blocks * 512
-            apparent = s.st_size
+            apparent = 0 if backing is not None else s.st_size
             categories[category(path, home)] += allocated
             if progress and time.monotonic() - last_progress > 60:
                 last_progress = time.monotonic()
@@ -157,15 +164,35 @@ def scan(roots, excludes=(), home=HOME, progress=False):
                     "counts": dict(counts), "partial_categories": dict(categories)})
                 print(f"audit in progress: {counts['files']} files; {path}", file=sys.stderr, flush=True)
             if stat.S_ISDIR(s.st_mode):
+                if backing is not None:
+                    plain = path.lstat()
+                    if plain.st_dev != plaintext_device:
+                        skipped.append({"path": str(path), "reason": "different plaintext filesystem"})
+                        categories[category(path, home)] -= allocated
+                        return 0, 0
+                    if plain.st_ino != s.st_ino:
+                        raise OSError("plaintext/backing directory inode changed during audit")
                 counts["directories"] += 1
+                lower = {}
+                if backing is not None:
+                    with os.scandir(backing) as entries:
+                        lower = {e.inode(): Path(e.path) for e in entries}
                 with os.scandir(path) as entries:
                     for entry in entries:
-                        a, b = visit(Path(entry.path), device, depth + 1)
+                        child_backing = lower.get(entry.inode()) if backing is not None else None
+                        if backing is not None and child_backing is None:
+                            # Concurrent rename/create or another mount. Do not guess
+                            # which encrypted file belongs to a decrypted name.
+                            counts["errors"] += 1
+                            if len(errors) < 100:
+                                errors.append({"path": entry.path, "error": "no matching backing inode; concurrent change or nested mount"})
+                            continue
+                        a, b = visit(Path(entry.path), device, depth + 1, child_backing)
                         allocated += a
                         apparent += b
                 if depth <= 3 or allocated >= 256 * 1024 ** 2:
                     directory_rows.append({"path": str(path), "allocated": allocated,
-                                           "apparent": apparent, "depth": depth})
+                                           "apparent": None if backing is not None else apparent, "depth": depth})
                 if progress and depth == 1:
                     print(f"scanned {path}: {allocated / GIB:.2f} GiB", file=sys.stderr, flush=True)
             elif stat.S_ISREG(s.st_mode):
@@ -187,14 +214,26 @@ def scan(roots, excludes=(), home=HOME, progress=False):
     totals = []
     for root in roots:
         root = Path(os.path.abspath(root))
-        a, b = visit(root, root.lstat().st_dev)
-        totals.append({"path": str(root), "allocated": a, "apparent": b})
+        device = (backing_root if backing_root is not None else root).lstat().st_dev
+        a, b = visit(root, device, backing=backing_root)
+        totals.append({"path": str(root), "allocated": a, "apparent": None if backing_root is not None else b})
+    if backing_root is not None:
+        corrected = []
+        for a, p, _, m, n in largest:
+            try:
+                apparent = Path(p).lstat().st_size
+            except OSError:
+                apparent = None
+            corrected.append((a,p,apparent,m,n))
+        largest = corrected
     return {"timestamp": stamp(), "roots": totals, "categories": dict(categories),
             "directories": sorted(directory_rows, key=lambda x: -x["allocated"]),
             "largest_files": [{"allocated": a, "path": p, "apparent": b,
                                "mtime": m, "links": n} for a, p, b, m, n in sorted(largest, reverse=True)],
             "counts": dict(counts), "errors": errors, "skipped": skipped,
+            "encrypted_backing_root": str(backing_root) if backing_root is not None else None,
             "notes": ["Categories are additive; directory rows overlap.",
+                      "Encrypted backing mode reports exact allocated blocks; aggregate apparent sizes are unavailable, largest-file apparent sizes are read through plaintext paths.",
                       "Live scan is not an atomic snapshot; permissions and concurrent changes are reported.",
                       "Separate encrypted/plaintext mounts can refer to the same physical data; never sum them."]}
 
@@ -423,6 +462,7 @@ def main(argv=None):
     audit.add_argument("--exclude", action="append", default=[])
     audit.add_argument("--output")
     audit.add_argument("--scheduled", action="store_true")
+    audit.add_argument("--encrypted-backing-root", help="Optional eCryptfs backing directory with matching root inode; omits aggregate apparent sizes")
     for name in ("status", "check", "maintain", "clean"):
         command = sub.add_parser(name)
         if name == "clean":
@@ -462,7 +502,8 @@ def main(argv=None):
                 if any(root == other or root in other.parents or other in root.parents
                        for other in roots[i + 1:]):
                     raise ValueError("audit roots must not overlap")
-            result = scan(roots, args.exclude, progress=True)
+            backing = args.encrypted_backing_root or (cfg.get("encrypted_backing_root") if roots == [HOME] else None)
+            result = scan(roots, args.exclude, progress=True, backing_root=backing)
             result["resources"] = resources()
             result["filesystems"] = [filesystem(p) for p in roots]
             result["budgets_gib"] = cfg["budgets_gib"]

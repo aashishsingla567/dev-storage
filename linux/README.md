@@ -39,6 +39,24 @@ Hardlink blocks belong to whichever path is visited first; individual snapshot
 or project sizes are therefore traversal-dependent. Sum the exclusive totals.
 Sparse files can have huge apparent sizes and small allocated sizes.
 
+On eCryptfs, plaintext `stat` can open and decrypt every file header, making
+large dependency trees expensive to audit. Optional backing metadata mode
+matches decrypted directory entries to raw backing files by inode and counts
+their allocated blocks without reading those headers:
+
+```bash
+dev-storage audit --encrypted-backing-root /home/.ecryptfs/USERNAME/.Private
+```
+
+The backing and mounted roots must have matching inode numbers on different
+filesystems. This is read-only and never exposes encrypted filenames in the
+report. Aggregate apparent sizes are `null` in this mode; the largest files
+still get apparent sizes from plaintext paths. Unmatched entries during live
+renames/mount changes are reported as errors, not guessed. Configure
+`encrypted_backing_root` in the private config for scheduled home audits.
+Only use the raw backing directory of this mounted eCryptfs home; this option
+is not a generic encrypted-filesystem scanner.
+
 For a privileged system scan, choose a private output explicitly:
 
 ```bash
